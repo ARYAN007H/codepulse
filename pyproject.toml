@@ -1,0 +1,47 @@
+[project]
+name = "codepulse"
+version = "0.1.0"
+description = "🔬 X-ray your codebase — interactive complexity heatmaps for any Git repository"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "ARYAN007H"}
+]
+keywords = [
+    "code-analysis", "complexity", "heatmap", "git",
+    "developer-tools", "cyclomatic-complexity", "maintainability",
+    "treemap", "code-quality", "technical-debt",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
+
+dependencies = [
+    "typer[all]>=0.9",
+    "rich>=13.0",
+    "radon>=6.0",
+    "gitpython>=3.1",
+]
+
+[project.scripts]
+codepulse = "codepulse.main:app"
+
+[project.urls]
+Homepage = "https://github.com/ARYAN007H/codepulse"
+Repository = "https://github.com/ARYAN007H/codepulse"
+Issues = "https://github.com/ARYAN007H/codepulse/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
