@@ -410,6 +410,12 @@ tbody td {
   vertical-align: middle;
 }
 
+.file-path-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .file-path {
   font-family: var(--mono);
   font-size: 0.8rem;
@@ -417,6 +423,20 @@ tbody td {
   max-width: 350px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.4rem;
+  background: rgba(255, 170, 0, 0.08);
+  border: 1px solid rgba(255, 170, 0, 0.2);
+  border-radius: 4px;
+  color: rgba(255, 170, 0, 0.75);
+  font-size: 0.65rem;
+  font-weight: 500;
+  cursor: help;
   white-space: nowrap;
 }
 
@@ -910,6 +930,9 @@ function renderTreemap() {
     node.addEventListener('mouseenter', (e) => {
       const d = r.data;
       let html = `<div class="tooltip-title">${d.path}</div>`;
+      if (d.confidence === 'low') {
+        html += `<div class="tooltip-row"><span class="label">Confidence</span><span class="value" style="color:var(--amber);font-size:0.75rem" title="Low statistical confidence: file is too small or lacks functions for accurate metrics.">⚠️ Low Confidence</span></div>`;
+      }
       html += `<div class="tooltip-row"><span class="label">Risk Score</span><span class="value" style="color:${riskColor(d.risk_score)}">${d.risk_score} / 100 ${tierEmoji(d.risk_tier)}</span></div>`;
       html += `<div class="tooltip-row"><span class="label">Complexity</span><span class="value"><span class="grade-badge ${gradeClass(d.cc_grade)}">${d.cc_grade}</span> avg ${d.avg_cc}</span></div>`;
       html += `<div class="tooltip-row"><span class="label">Maintainability</span><span class="value ${miClass(d.mi_grade)}">${d.mi_score}</span></div>`;
@@ -1053,7 +1076,13 @@ function renderTable() {
     tr.className = 'risk-' + d.risk_tier;
 
     // File
-    let html = `<td><div class="file-path" title="${d.path}">${d.path}</div></td>`;
+    let fileHtml = `<div class="file-path-cell">`;
+    fileHtml += `<div class="file-path" title="${d.path}">${d.path}</div>`;
+    if (d.confidence === 'low') {
+      fileHtml += `<span class="confidence-badge" title="Low statistical confidence: file is too small or lacks functions for accurate metrics.">⚠️ low confidence</span>`;
+    }
+    fileHtml += `</div>`;
+    let html = `<td>${fileHtml}</td>`;
 
     // Risk
     const color = riskColor(d.risk_score);

@@ -6,6 +6,7 @@ Also generates human-readable insights via heuristic rules.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any
 
 
@@ -33,6 +34,7 @@ class ScoredFile:
     last_modified_days: int | None
     risk_score: float
     risk_tier: str
+    confidence: str
     extension: str
 
     def to_dict(self) -> dict:
@@ -57,6 +59,7 @@ class ScoredFile:
             "last_modified_days": self.last_modified_days,
             "risk_score": self.risk_score,
             "risk_tier": self.risk_tier,
+            "confidence": self.confidence,
             "extension": self.extension,
         }
 
@@ -87,70 +90,94 @@ def compute_scores(
     """Compute composite risk scores for all analyzed files.
 
     Formula (with git):
-        risk = (norm_cc × 0.35) + ((100 - MI) × 0.30) + (norm_churn × 0.25) + (norm_loc × 0.10)
+        risk = (cc_risk * 0.40) + (mi_risk * 0.35) + (churn_risk * 0.20) + (loc_risk * 0.05)
 
     Formula (without git):
-        risk = (norm_cc × 0.45) + ((100 - MI) × 0.40) + (norm_loc × 0.15)
+        risk = (cc_risk * 0.50) + (mi_risk * 0.40) + (loc_risk * 0.10)
 
-    All inputs normalized to 0-100 across the repo.
+    Weight Rationale:
+        - Complexity (40%): McCabe's Cyclomatic Complexity (1976) measures logical path density.
+        - Maintainability (35%): Radon's Maintainability Index measures readability and size.
+        - Churn (20%): Historical git commit count identifies active development hotspots.
+        - Size (5%): LOC acts as a minor penalty for large files (capped at 1,000 LOC).
     """
     if not file_metrics:
         return []
-
-    # Gather value ranges for normalization
-    all_cc = [f["avg_cc"] for f in file_metrics]
-    all_loc = [f["loc"] for f in file_metrics]
-    cc_min, cc_max = min(all_cc), max(all_cc)
-    loc_min, loc_max = min(all_loc), max(all_loc)
 
     if use_git and churn_stats:
         all_churn = [
             churn_stats.get(f["path"], {}).get("commit_count", 0) for f in file_metrics
         ]
-        churn_min, churn_max = min(all_churn), max(all_churn)
+        churn_max = max(all_churn) if all_churn else 0
     else:
-        churn_min, churn_max = 0, 0
+        churn_max = 0
 
     scored = []
     for f in file_metrics:
         path = f["path"]
-        churn = churn_stats.get(path, {})
+        churn = churn_stats.get(path, {}) if churn_stats else {}
         commit_count = churn.get("commit_count", 0)
+        loc = f.get("loc", 0)
+        num_functions = f.get("num_functions", 0)
 
-        norm_cc = _normalize(f["avg_cc"], cc_min, cc_max)
-        norm_mi_inverted = 100 - f["mi_score"]
-        norm_loc = _normalize(f["loc"], loc_min, loc_max)
+        # 1. Complexity Risk (cc_risk) using soft exponential decay
+        # Soft curve preserves differentiability at high scores (doesn't flatline at 100).
+        avg_cc = f.get("avg_cc", 0.0)
+        max_cc = f.get("max_cc", 0)
+        cc_metric = (avg_cc * 4.0) + (max_cc * 1.5)
+        cc_risk = 100.0 * (1.0 - math.exp(-cc_metric / 50.0))
 
+        # 2. Maintainability Index Risk (mi_risk)
+        # Standard Radon MI score (0-100). Default to 100.0 (perfectly maintainable) if None/missing.
+        mi_score = f.get("mi_score")
+        mi_val = mi_score if mi_score is not None else 100.0
+        mi_risk = max(0.0, min(100.0, 100.0 - mi_val))
+
+        # 3. Absolute Capped Size Risk (loc_risk)
+        # Capped at 1,000 LOC. Linear scaling from 0 to 100.
+        loc_risk = min(100.0, (loc / 1000.0) * 100.0)
+
+        # 4. Hybrid Git Churn Risk (churn_risk)
+        # Avoids inflating 1-commit files by imposing a floor of 15 commits.
         if use_git and churn_stats:
-            norm_churn = _normalize(commit_count, churn_min, churn_max)
+            churn_risk = (commit_count / max(churn_max, 15)) * 100.0
+            # Composite risk with Git (40% CC, 35% MI, 20% Churn, 5% LOC)
             risk = (
-                (norm_cc * 0.35)
-                + (norm_mi_inverted * 0.30)
-                + (norm_churn * 0.25)
-                + (norm_loc * 0.10)
+                (cc_risk * 0.40)
+                + (mi_risk * 0.35)
+                + (churn_risk * 0.20)
+                + (loc_risk * 0.05)
             )
         else:
+            # Composite risk without Git (50% CC, 40% MI, 10% LOC)
             risk = (
-                (norm_cc * 0.45) + (norm_mi_inverted * 0.40) + (norm_loc * 0.15)
+                (cc_risk * 0.50)
+                + (mi_risk * 0.40)
+                + (loc_risk * 0.10)
             )
 
         risk = max(0.0, min(100.0, risk))
 
+        # 5. Confidence score
+        # Very small files (< 20 lines) or stubs without functions have low complexity representation,
+        # making static analysis metrics less statistically confident.
+        confidence = "low" if (loc < 20 or num_functions == 0) else "high"
+
         scored.append(
             ScoredFile(
                 path=path,
-                loc=f["loc"],
-                sloc=f["sloc"],
-                blank_lines=f["blank_lines"],
-                comment_lines=f["comment_lines"],
-                comment_ratio=f["comment_ratio"],
-                avg_cc=f["avg_cc"],
-                max_cc=f["max_cc"],
-                cc_grade=f["cc_grade"],
-                mi_score=f["mi_score"],
-                mi_grade=f["mi_grade"],
-                num_functions=f["num_functions"],
-                functions=f["functions"],
+                loc=loc,
+                sloc=f.get("sloc", 0),
+                blank_lines=f.get("blank_lines", 0),
+                comment_lines=f.get("comment_lines", 0),
+                comment_ratio=f.get("comment_ratio", 0.0),
+                avg_cc=avg_cc,
+                max_cc=max_cc,
+                cc_grade=f.get("cc_grade", "A"),
+                mi_score=mi_val,
+                mi_grade=f.get("mi_grade", "good"),
+                num_functions=num_functions,
+                functions=f.get("functions", []),
                 commit_count=commit_count,
                 unique_authors=churn.get("unique_authors", 0),
                 last_modified=churn.get("last_modified"),
@@ -158,7 +185,8 @@ def compute_scores(
                 last_modified_days=churn.get("last_modified_days"),
                 risk_score=round(risk, 1),
                 risk_tier=_risk_tier(risk),
-                extension=f["extension"],
+                confidence=confidence,
+                extension=f.get("extension", ""),
             )
         )
 

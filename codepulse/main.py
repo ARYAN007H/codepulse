@@ -340,3 +340,8 @@ def _print_summary(scored: list, repo_name: str, use_git: bool) -> None:
         table.add_row(*row)
 
     console.print(table)
+
+
+if __name__ == "__main__":
+    app()
+

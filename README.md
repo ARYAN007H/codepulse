@@ -10,6 +10,13 @@
 </p>
 
 <p align="center">
+  <img src="assets/treemap.png" alt="CodePulse Treemap" width="800" style="border-radius: 8px;">
+</p>
+<p align="center">
+  <img src="assets/table.png" alt="CodePulse Table and Insights" width="800" style="border-radius: 8px;">
+</p>
+
+<p align="center">
   <a href="#-install">Install</a> •
   <a href="#-quick-start">Quick Start</a> •
   <a href="#-features">Features</a> •
@@ -106,11 +113,23 @@ The hero of the tool — a premium dark-mode dashboard with:
 | Author Count | `gitpython` | How many developers worked on each file |
 | Risk Score | Composite | Weighted combination of all metrics (0-100) |
 
-### Risk Score Formula
+### Calibrated Risk Score Formula
 
-```
-risk = (normalized_CC × 0.35) + ((100 - MI) × 0.30) + (normalized_churn × 0.25) + (normalized_LOC × 0.10)
-```
+To prevent false alarms in clean repositories and accurately flag real hotspots in massive repositories, CodePulse uses an absolute-calibrated risk formula:
+
+#### 1. Composite Weights
+*   **With Git**: `risk = (cc_risk * 0.40) + (mi_risk * 0.35) + (churn_risk * 0.20) + (loc_risk * 0.05)`
+*   **Without Git**: `risk = (cc_risk * 0.50) + (mi_risk * 0.40) + (loc_risk * 0.10)`
+
+#### 2. Component Calculations
+*   **Logical Complexity Risk (`cc_risk`)**: Combines average cyclomatic complexity and worst-case function complexity, scaled via soft exponential decay so extreme values remain differentiable instead of hitting a hard linear ceiling:
+    $$cc\_risk = 100 \times \left(1 - e^{-\frac{avg\_cc \times 4.0 + max\_cc \times 1.5}{50}}\right)$$
+*   **Readability & Maintainability Risk (`mi_risk`)**: Maps Radon's Maintainability Index (0-100) to risk. Safe fallback on stubs or empty files:
+    $$mi\_risk = 100 - mi\_score$$
+*   **Git Churn Risk (`churn_risk`)**: Absolute-relative hybrid that normalizes git commits against a floor of 15, preventing newly initialized repos with 1 commit from scoring maximum risk:
+    $$churn\_risk = \frac{commit\_count}{\max(churn\_max, 15)} \times 100$$
+*   **Code Size Risk (`loc_risk`)**: Absolute capped penalty to avoid relative scaling skewing small files:
+    $$loc\_risk = \min\left(100.0, \frac{loc}{1000} \times 100\right)$$
 
 ---
 
